@@ -359,3 +359,362 @@ echo "  Streamlit:      http://$STREAMLIT_IP:8501"
 echo ""
 echo "  SSH:            ssh tccadmin@<ip>"
 echo ""
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 6. Zabbix Admin Credentials Check
+# ═══════════════════════════════════════════════════════════════════════════════
+echo ""
+echo -e "${CYAN}══════════════════════════════════════════════${NC}"
+echo -e "${CYAN}  Zabbix Admin Credentials${NC}"
+echo -e "${CYAN}══════════════════════════════════════════════${NC}"
+echo ""
+
+ZABBIX_URL="http://$ZABBIX_IP/zabbix/api_jsonrpc.php"
+ZABBIX_USER="Admin"
+ZABBIX_PASS="zabbix"
+
+# Try to authenticate with default credentials
+ZABBIX_AUTH=$(python3 -c "
+import urllib.request, json
+try:
+    data = json.dumps({
+        'jsonrpc': '2.0',
+        'method': 'user.login',
+        'params': {'username': '$ZABBIX_USER', 'password': '$ZABBIX_PASS'},
+        'id': 1
+    }).encode()
+    req = urllib.request.Request('$ZABBIX_URL', data=data, headers={'Content-Type': 'application/json-rpc'})
+    resp = json.loads(urllib.request.urlopen(req, timeout=10).read())
+    if 'result' in resp:
+        print(resp['result'])
+    else:
+        print('AUTH_FAILED')
+except Exception as e:
+    print('UNREACHABLE')
+" 2>/dev/null)
+
+if [[ "$ZABBIX_AUTH" == "UNREACHABLE" ]]; then
+  echo -e "  ${RED}❌ Zabbix API unreachable${NC}"
+elif [[ "$ZABBIX_AUTH" == "AUTH_FAILED" ]]; then
+  echo -e "  ${YELLOW}⚠️  Default password 'zabbix' does not work — password may have been changed${NC}"
+  echo "     Try:  Admin / <your-custom-password>"
+else
+  echo -e "  ${GREEN}✅ Zabbix login verified${NC}"
+  echo ""
+  echo "     URL:       http://$ZABBIX_IP/zabbix"
+  echo "     Username:  $ZABBIX_USER"
+  echo "     Password:  $ZABBIX_PASS"
+
+  # Fetch monitored hosts via API
+  HOSTS_INFO=$(python3 -c "
+import urllib.request, json
+auth = '$ZABBIX_AUTH'
+data = json.dumps({
+    'jsonrpc': '2.0',
+    'method': 'host.get',
+    'params': {'output': ['host', 'status', 'name'], 'selectInterfaces': ['ip']},
+    'auth': auth,
+    'id': 2
+}).encode()
+req = urllib.request.Request('$ZABBIX_URL', data=data, headers={'Content-Type': 'application/json-rpc'})
+resp = json.loads(urllib.request.urlopen(req, timeout=10).read())
+hosts = resp.get('result', [])
+if hosts:
+    for h in hosts:
+        ip = h.get('interfaces', [{}])[0].get('ip', 'N/A') if h.get('interfaces') else 'N/A'
+        status = 'Enabled' if h.get('status') == '0' else 'Disabled'
+        print(f\"  {h.get('name','?'):25s} {ip:18s} {status}\")
+else:
+    print('  (no monitored hosts)')
+" 2>/dev/null)
+  echo ""
+  echo "     Monitored Hosts:"
+  printf "     %-25s %-18s %s\n" "Name" "IP" "Status"
+  printf "     %-25s %-18s %s\n" "─────────────────────────" "──────────────────" "────────"
+  echo "$HOSTS_INFO"
+
+  # Logout
+  python3 -c "
+import urllib.request, json
+data = json.dumps({'jsonrpc':'2.0','method':'user.logout','params':[],'auth':'$ZABBIX_AUTH','id':3}).encode()
+req = urllib.request.Request('$ZABBIX_URL', data=data, headers={'Content-Type':'application/json-rpc'})
+urllib.request.urlopen(req, timeout=5)
+" 2>/dev/null || true
+fi
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 7. Kibana Dashboard Setup
+# ═══════════════════════════════════════════════════════════════════════════════
+echo ""
+echo -e "${CYAN}══════════════════════════════════════════════${NC}"
+echo -e "${CYAN}  Kibana Dashboard${NC}"
+echo -e "${CYAN}══════════════════════════════════════════════${NC}"
+echo ""
+
+KIBANA_URL="http://$ES_IP:5601"
+
+# Check if Kibana is reachable
+KIBANA_STATUS=$(python3 -c "
+import urllib.request, json
+try:
+    r = urllib.request.urlopen('$KIBANA_URL/api/status', timeout=10)
+    data = json.loads(r.read())
+    print(data.get('status', {}).get('overall', {}).get('level', 'unknown'))
+except:
+    print('UNREACHABLE')
+" 2>/dev/null)
+
+if [[ "$KIBANA_STATUS" == "UNREACHABLE" ]]; then
+  echo -e "  ${RED}❌ Kibana unreachable, skipping dashboard setup${NC}"
+else
+  echo -e "  ${GREEN}✅ Kibana status: $KIBANA_STATUS${NC}"
+
+  # Check if index pattern already exists
+  PATTERN_EXISTS=$(python3 -c "
+import urllib.request, json
+try:
+    req = urllib.request.Request('$KIBANA_URL/api/saved_objects/_find?type=index-pattern&search=infrastructure-logs', headers={'kbn-xsrf':'true'})
+    resp = json.loads(urllib.request.urlopen(req, timeout=10).read())
+    print(resp.get('total', 0))
+except:
+    print(0)
+" 2>/dev/null)
+
+  if [[ "$PATTERN_EXISTS" == "0" ]]; then
+    echo "  Creating index pattern 'infrastructure-logs*'..."
+    python3 -c "
+import urllib.request, json
+data = json.dumps({
+    'attributes': {
+        'title': 'infrastructure-logs*',
+        'timeFieldName': 'timestamp'
+    }
+}).encode()
+req = urllib.request.Request(
+    '$KIBANA_URL/api/saved_objects/index-pattern/infrastructure-logs',
+    data=data,
+    headers={'kbn-xsrf': 'true', 'Content-Type': 'application/json'},
+    method='POST'
+)
+try:
+    resp = urllib.request.urlopen(req, timeout=10)
+    print('OK')
+except Exception as e:
+    print(f'FAIL: {e}')
+" 2>/dev/null
+    echo -e "  ${GREEN}✅ Index pattern created${NC}"
+  else
+    echo -e "  ${GREEN}✅ Index pattern 'infrastructure-logs*' already exists${NC}"
+  fi
+
+  # Check if TCC dashboard exists
+  DASH_EXISTS=$(python3 -c "
+import urllib.request, json
+try:
+    req = urllib.request.Request('$KIBANA_URL/api/saved_objects/_find?type=dashboard&search=TCC%20Infrastructure', headers={'kbn-xsrf':'true'})
+    resp = json.loads(urllib.request.urlopen(req, timeout=10).read())
+    print(resp.get('total', 0))
+except:
+    print(0)
+" 2>/dev/null)
+
+  if [[ "$DASH_EXISTS" == "0" ]]; then
+    echo "  Creating TCC Infrastructure dashboard..."
+    KIBANA_EXPORT="$KIBANA_URL" python3 << 'PYEOF'
+import urllib.request, json, os
+
+KIBANA = os.environ["KIBANA_EXPORT"]
+
+# --- Visualizations ---
+visuals = [
+    {
+        "id": "tcc-log-severity",
+        "type": "visualization",
+        "attributes": {
+            "title": "Log Severity Distribution",
+            "visState": json.dumps({
+                "title": "Log Severity Distribution",
+                "type": "pie",
+                "aggs": [
+                    {"id": "1", "enabled": True, "type": "count", "params": {}, "schema": "metric"},
+                    {"id": "2", "enabled": True, "type": "terms", "params": {"field": "severity", "size": 10}, "schema": "segment"}
+                ],
+                "params": {"type": "pie", "addTooltip": True, "addLegend": True, "isDonut": True}
+            }),
+            "kibanaSavedObjectMeta": {"searchSourceJSON": json.dumps({"index": "infrastructure-logs", "query": {"query": "", "language": "kuery"}, "filter": []})}
+        }
+    },
+    {
+        "id": "tcc-logs-by-host",
+        "type": "visualization",
+        "attributes": {
+            "title": "Logs by Hostname",
+            "visState": json.dumps({
+                "title": "Logs by Hostname",
+                "type": "histogram",
+                "aggs": [
+                    {"id": "1", "enabled": True, "type": "count", "params": {}, "schema": "metric"},
+                    {"id": "2", "enabled": True, "type": "terms", "params": {"field": "hostname", "size": 10}, "schema": "segment"}
+                ],
+                "params": {"type": "histogram", "addTooltip": True, "addLegend": True}
+            }),
+            "kibanaSavedObjectMeta": {"searchSourceJSON": json.dumps({"index": "infrastructure-logs", "query": {"query": "", "language": "kuery"}, "filter": []})}
+        }
+    },
+    {
+        "id": "tcc-logs-by-service",
+        "type": "visualization",
+        "attributes": {
+            "title": "Logs by Service",
+            "visState": json.dumps({
+                "title": "Logs by Service",
+                "type": "pie",
+                "aggs": [
+                    {"id": "1", "enabled": True, "type": "count", "params": {}, "schema": "metric"},
+                    {"id": "2", "enabled": True, "type": "terms", "params": {"field": "service", "size": 15}, "schema": "segment"}
+                ],
+                "params": {"type": "pie", "addTooltip": True, "addLegend": True, "isDonut": False}
+            }),
+            "kibanaSavedObjectMeta": {"searchSourceJSON": json.dumps({"index": "infrastructure-logs", "query": {"query": "", "language": "kuery"}, "filter": []})}
+        }
+    },
+    {
+        "id": "tcc-logs-timeline",
+        "type": "visualization",
+        "attributes": {
+            "title": "Log Volume Over Time",
+            "visState": json.dumps({
+                "title": "Log Volume Over Time",
+                "type": "line",
+                "aggs": [
+                    {"id": "1", "enabled": True, "type": "count", "params": {}, "schema": "metric"},
+                    {"id": "2", "enabled": True, "type": "date_histogram", "params": {"field": "timestamp", "interval": "auto"}, "schema": "segment"}
+                ],
+                "params": {"type": "line", "addTooltip": True, "addLegend": True}
+            }),
+            "kibanaSavedObjectMeta": {"searchSourceJSON": json.dumps({"index": "infrastructure-logs", "query": {"query": "", "language": "kuery"}, "filter": []})}
+        }
+    },
+    {
+        "id": "tcc-cpu-metrics",
+        "type": "visualization",
+        "attributes": {
+            "title": "Avg CPU % by Host",
+            "visState": json.dumps({
+                "title": "Avg CPU % by Host",
+                "type": "histogram",
+                "aggs": [
+                    {"id": "1", "enabled": True, "type": "avg", "params": {"field": "metrics.cpu_percent"}, "schema": "metric"},
+                    {"id": "2", "enabled": True, "type": "terms", "params": {"field": "hostname", "size": 10}, "schema": "segment"}
+                ],
+                "params": {"type": "histogram", "addTooltip": True, "addLegend": True}
+            }),
+            "kibanaSavedObjectMeta": {"searchSourceJSON": json.dumps({"index": "infrastructure-logs", "query": {"query": "", "language": "kuery"}, "filter": []})}
+        }
+    },
+    {
+        "id": "tcc-error-logs",
+        "type": "visualization",
+        "attributes": {
+            "title": "Errors & Critical Logs",
+            "visState": json.dumps({
+                "title": "Errors & Critical Logs",
+                "type": "histogram",
+                "aggs": [
+                    {"id": "1", "enabled": True, "type": "count", "params": {}, "schema": "metric"},
+                    {"id": "2", "enabled": True, "type": "date_histogram", "params": {"field": "timestamp", "interval": "auto"}, "schema": "segment"}
+                ],
+                "params": {"type": "histogram", "addTooltip": True, "addLegend": True}
+            }),
+            "kibanaSavedObjectMeta": {"searchSourceJSON": json.dumps({"index": "infrastructure-logs", "query": {"query": "severity: ERROR OR severity: CRITICAL", "language": "kuery"}, "filter": []})}
+        }
+    }
+]
+
+# Create visualizations
+for v in visuals:
+    data = json.dumps({"attributes": v["attributes"]}).encode()
+    req = urllib.request.Request(
+        f'{KIBANA}/api/saved_objects/visualization/{v["id"]}',
+        data=data,
+        headers={"kbn-xsrf": "true", "Content-Type": "application/json"},
+        method="POST"
+    )
+    try:
+        urllib.request.urlopen(req, timeout=10)
+    except urllib.error.HTTPError as e:
+        if e.code == 409:
+            pass  # already exists
+        else:
+            print(f"  Warning: {v['id']}: {e}")
+    except Exception as e:
+        print(f"  Warning: {v['id']}: {e}")
+
+# Create dashboard
+panels = []
+for i, v in enumerate(visuals):
+    col = (i % 2) * 24
+    row = (i // 2) * 15
+    panels.append({
+        "embeddableConfig": {},
+        "gridData": {"x": col, "y": row, "w": 24, "h": 15, "i": str(i)},
+        "panelIndex": str(i),
+        "panelRefName": f"panel_{i}",
+        "type": "visualization"
+    })
+
+references = [
+    {"name": f"panel_{i}", "type": "visualization", "id": v["id"]}
+    for i, v in enumerate(visuals)
+]
+
+dash_data = json.dumps({
+    "attributes": {
+        "title": "TCC Infrastructure Logs Dashboard",
+        "description": "Overview of infrastructure logs from Zabbix, Elasticsearch, and E-Commerce systems",
+        "panelsJSON": json.dumps(panels),
+        "optionsJSON": json.dumps({"useMargins": True, "hidePanelTitles": False}),
+        "timeRestore": True,
+        "timeTo": "now",
+        "timeFrom": "now-24h",
+        "kibanaSavedObjectMeta": {
+            "searchSourceJSON": json.dumps({"query": {"query": "", "language": "kuery"}, "filter": []})
+        }
+    },
+    "references": references
+}).encode()
+
+req = urllib.request.Request(
+    f"{KIBANA}/api/saved_objects/dashboard/tcc-infra-dashboard",
+    data=dash_data,
+    headers={"kbn-xsrf": "true", "Content-Type": "application/json"},
+    method="POST"
+)
+try:
+    urllib.request.urlopen(req, timeout=10)
+    print("OK")
+except urllib.error.HTTPError as e:
+    if e.code == 409:
+        print("EXISTS")
+    else:
+        print(f"FAIL: {e}")
+except Exception as e:
+    print(f"FAIL: {e}")
+PYEOF
+
+    echo -e "  ${GREEN}✅ Dashboard created${NC}"
+  else
+    echo -e "  ${GREEN}✅ Dashboard 'TCC Infrastructure Logs' already exists${NC}"
+  fi
+
+  echo ""
+  echo "  Dashboard URL:  ${KIBANA_URL}/app/dashboards#/view/tcc-infra-dashboard"
+  echo ""
+  echo "  Visualizations:"
+  echo "    • Log Severity Distribution (donut)"
+  echo "    • Logs by Hostname (bar chart)"
+  echo "    • Logs by Service (pie)"
+  echo "    • Log Volume Over Time (line)"
+  echo "    • Avg CPU % by Host (bar chart)"
+  echo "    • Errors & Critical Logs (histogram)"
+fi
