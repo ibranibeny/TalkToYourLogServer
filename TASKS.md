@@ -12,11 +12,11 @@
 | 1.1 | Update `infra/variables.sh` with actual subscription ID | ✅ Done | 439cf6ec-8907-40ee-bae2-7efd9656cd09 |
 | 1.2 | Run `az login` and verify subscription | ✅ Done | |
 | 1.3 | Execute `infra/deploy.sh` to create all Azure resources | ✅ Done | 7 scripts (01-07) |
-| 1.4 | Verify Elasticsearch VM is running | ✅ Done | http://4.193.105.195:9200 |
-| 1.5 | Verify Kibana UI is accessible | ✅ Done | http://4.193.105.195:5601, 11 panel dashboard |
-| 1.6 | Verify Zabbix VM is running | ✅ Done | http://20.212.83.69/zabbix (Admin/zabbix) |
-| 1.7 | Verify E-Commerce VM is running | ✅ Done | http://104.215.150.75/ |
-| 1.8 | Verify Streamlit VM is running | ✅ Done | http://4.193.97.88:8501 |
+| 1.4 | Verify Elasticsearch VM is running | ✅ Done | http://20.212.115.93:9200 |
+| 1.5 | Verify Kibana UI is accessible | ✅ Done | http://20.212.115.93:5601, 11 panel dashboard |
+| 1.6 | Verify Zabbix VM is running | ✅ Done | http://52.230.33.83/zabbix (Admin/zabbix) |
+| 1.7 | Verify E-Commerce VM is running | ✅ Done | http://4.194.60.39/ |
+| 1.8 | Verify Streamlit VM is running | ✅ Done | http://4.193.143.174:8501 |
 | 1.9 | Test E-Commerce: browse, add to cart, checkout | ✅ Done | Logs visible in ES |
 | 1.10 | Verify AI Search index created | ✅ Done | logs-index, 1618 docs, semantic + vector |
 | 1.11 | Verify AI Foundry model deployments | ✅ Done | gpt-4o + text-embedding-ada-002 |
