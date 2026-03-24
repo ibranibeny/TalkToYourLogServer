@@ -469,19 +469,20 @@ if [[ "$KIBANA_STATUS" == "UNREACHABLE" ]]; then
 else
   echo -e "  ${GREEN}✅ Kibana status: $KIBANA_STATUS${NC}"
 
-  # Check if index pattern already exists
-  PATTERN_EXISTS=$(python3 -c "
+  # Ensure index pattern exists with exact ID 'infrastructure-logs'
+  # (check by ID, not by title search — avoids false match on UUID-based patterns)
+  PATTERN_ID_EXISTS=$(python3 -c "
 import urllib.request, json
 try:
-    req = urllib.request.Request('$KIBANA_URL/api/saved_objects/_find?type=index-pattern&search=infrastructure-logs', headers={'kbn-xsrf':'true'})
-    resp = json.loads(urllib.request.urlopen(req, timeout=10).read())
-    print(resp.get('total', 0))
+    req = urllib.request.Request('$KIBANA_URL/api/saved_objects/index-pattern/infrastructure-logs', headers={'kbn-xsrf':'true'})
+    resp = urllib.request.urlopen(req, timeout=10)
+    print('YES')
 except:
-    print(0)
+    print('NO')
 " 2>/dev/null)
 
-  if [[ "$PATTERN_EXISTS" == "0" ]]; then
-    echo "  Creating index pattern 'infrastructure-logs*'..."
+  if [[ "$PATTERN_ID_EXISTS" != "YES" ]]; then
+    echo "  Creating index pattern 'infrastructure-logs*' (id=infrastructure-logs)..."
     python3 -c "
 import urllib.request, json
 data = json.dumps({
@@ -499,12 +500,17 @@ req = urllib.request.Request(
 try:
     resp = urllib.request.urlopen(req, timeout=10)
     print('OK')
+except urllib.error.HTTPError as e:
+    if e.code == 409:
+        print('EXISTS')
+    else:
+        print(f'FAIL: {e}')
 except Exception as e:
     print(f'FAIL: {e}')
 " 2>/dev/null
     echo -e "  ${GREEN}✅ Index pattern created${NC}"
   else
-    echo -e "  ${GREEN}✅ Index pattern 'infrastructure-logs*' already exists${NC}"
+    echo -e "  ${GREEN}✅ Index pattern 'infrastructure-logs*' (id=infrastructure-logs) exists${NC}"
   fi
 
   # Check if TCC dashboard exists
@@ -520,120 +526,170 @@ except:
 
   if [[ "$DASH_EXISTS" == "0" ]]; then
     echo "  Creating TCC Infrastructure dashboard..."
+
+    # Delete old broken dashboard & visualizations first (if any)
+    python3 -c "
+import urllib.request
+ids = [
+    'dashboard/tcc-infra-dashboard',
+    'visualization/tcc-log-severity', 'visualization/tcc-logs-by-host',
+    'visualization/tcc-logs-by-service', 'visualization/tcc-logs-timeline',
+    'visualization/tcc-cpu-metrics', 'visualization/tcc-error-logs',
+    'visualization/tcc-top-products', 'visualization/tcc-top-buyers',
+]
+for oid in ids:
+    try:
+        req = urllib.request.Request('$KIBANA_URL/api/saved_objects/' + oid, headers={'kbn-xsrf':'true'}, method='DELETE')
+        urllib.request.urlopen(req, timeout=10)
+    except:
+        pass
+" 2>/dev/null
+
     KIBANA_EXPORT="$KIBANA_URL" python3 << 'PYEOF'
 import urllib.request, json, os
 
 KIBANA = os.environ["KIBANA_EXPORT"]
+INDEX_ID = "infrastructure-logs"
+INDEX_REF = [{"name": "kibanaSavedObjectMeta.searchSourceJSON.index", "type": "index-pattern", "id": INDEX_ID}]
 
-# --- Visualizations ---
+def search_source(query=""):
+    return json.dumps({"indexRefName": "kibanaSavedObjectMeta.searchSourceJSON.index", "query": {"query": query, "language": "kuery"}, "filter": []})
+
+# --- Visualizations (Kibana 8.x format with references) ---
 visuals = [
     {
         "id": "tcc-log-severity",
-        "type": "visualization",
         "attributes": {
             "title": "Log Severity Distribution",
             "visState": json.dumps({
-                "title": "Log Severity Distribution",
-                "type": "pie",
+                "title": "Log Severity Distribution", "type": "pie",
                 "aggs": [
                     {"id": "1", "enabled": True, "type": "count", "params": {}, "schema": "metric"},
                     {"id": "2", "enabled": True, "type": "terms", "params": {"field": "severity", "size": 10}, "schema": "segment"}
                 ],
                 "params": {"type": "pie", "addTooltip": True, "addLegend": True, "isDonut": True}
             }),
-            "kibanaSavedObjectMeta": {"searchSourceJSON": json.dumps({"index": "infrastructure-logs", "query": {"query": "", "language": "kuery"}, "filter": []})}
-        }
+            "kibanaSavedObjectMeta": {"searchSourceJSON": search_source()}
+        },
+        "references": INDEX_REF
     },
     {
         "id": "tcc-logs-by-host",
-        "type": "visualization",
         "attributes": {
             "title": "Logs by Hostname",
             "visState": json.dumps({
-                "title": "Logs by Hostname",
-                "type": "histogram",
+                "title": "Logs by Hostname", "type": "histogram",
                 "aggs": [
                     {"id": "1", "enabled": True, "type": "count", "params": {}, "schema": "metric"},
                     {"id": "2", "enabled": True, "type": "terms", "params": {"field": "hostname", "size": 10}, "schema": "segment"}
                 ],
                 "params": {"type": "histogram", "addTooltip": True, "addLegend": True}
             }),
-            "kibanaSavedObjectMeta": {"searchSourceJSON": json.dumps({"index": "infrastructure-logs", "query": {"query": "", "language": "kuery"}, "filter": []})}
-        }
+            "kibanaSavedObjectMeta": {"searchSourceJSON": search_source()}
+        },
+        "references": INDEX_REF
     },
     {
         "id": "tcc-logs-by-service",
-        "type": "visualization",
         "attributes": {
             "title": "Logs by Service",
             "visState": json.dumps({
-                "title": "Logs by Service",
-                "type": "pie",
+                "title": "Logs by Service", "type": "pie",
                 "aggs": [
                     {"id": "1", "enabled": True, "type": "count", "params": {}, "schema": "metric"},
                     {"id": "2", "enabled": True, "type": "terms", "params": {"field": "service", "size": 15}, "schema": "segment"}
                 ],
                 "params": {"type": "pie", "addTooltip": True, "addLegend": True, "isDonut": False}
             }),
-            "kibanaSavedObjectMeta": {"searchSourceJSON": json.dumps({"index": "infrastructure-logs", "query": {"query": "", "language": "kuery"}, "filter": []})}
-        }
+            "kibanaSavedObjectMeta": {"searchSourceJSON": search_source()}
+        },
+        "references": INDEX_REF
     },
     {
         "id": "tcc-logs-timeline",
-        "type": "visualization",
         "attributes": {
             "title": "Log Volume Over Time",
             "visState": json.dumps({
-                "title": "Log Volume Over Time",
-                "type": "line",
+                "title": "Log Volume Over Time", "type": "line",
                 "aggs": [
                     {"id": "1", "enabled": True, "type": "count", "params": {}, "schema": "metric"},
                     {"id": "2", "enabled": True, "type": "date_histogram", "params": {"field": "timestamp", "interval": "auto"}, "schema": "segment"}
                 ],
                 "params": {"type": "line", "addTooltip": True, "addLegend": True}
             }),
-            "kibanaSavedObjectMeta": {"searchSourceJSON": json.dumps({"index": "infrastructure-logs", "query": {"query": "", "language": "kuery"}, "filter": []})}
-        }
+            "kibanaSavedObjectMeta": {"searchSourceJSON": search_source()}
+        },
+        "references": INDEX_REF
     },
     {
         "id": "tcc-cpu-metrics",
-        "type": "visualization",
         "attributes": {
             "title": "Avg CPU % by Host",
             "visState": json.dumps({
-                "title": "Avg CPU % by Host",
-                "type": "histogram",
+                "title": "Avg CPU % by Host", "type": "histogram",
                 "aggs": [
                     {"id": "1", "enabled": True, "type": "avg", "params": {"field": "metrics.cpu_percent"}, "schema": "metric"},
                     {"id": "2", "enabled": True, "type": "terms", "params": {"field": "hostname", "size": 10}, "schema": "segment"}
                 ],
                 "params": {"type": "histogram", "addTooltip": True, "addLegend": True}
             }),
-            "kibanaSavedObjectMeta": {"searchSourceJSON": json.dumps({"index": "infrastructure-logs", "query": {"query": "", "language": "kuery"}, "filter": []})}
-        }
+            "kibanaSavedObjectMeta": {"searchSourceJSON": search_source()}
+        },
+        "references": INDEX_REF
     },
     {
         "id": "tcc-error-logs",
-        "type": "visualization",
         "attributes": {
             "title": "Errors & Critical Logs",
             "visState": json.dumps({
-                "title": "Errors & Critical Logs",
-                "type": "histogram",
+                "title": "Errors & Critical Logs", "type": "histogram",
                 "aggs": [
                     {"id": "1", "enabled": True, "type": "count", "params": {}, "schema": "metric"},
                     {"id": "2", "enabled": True, "type": "date_histogram", "params": {"field": "timestamp", "interval": "auto"}, "schema": "segment"}
                 ],
                 "params": {"type": "histogram", "addTooltip": True, "addLegend": True}
             }),
-            "kibanaSavedObjectMeta": {"searchSourceJSON": json.dumps({"index": "infrastructure-logs", "query": {"query": "severity: ERROR OR severity: CRITICAL", "language": "kuery"}, "filter": []})}
-        }
+            "kibanaSavedObjectMeta": {"searchSourceJSON": search_source("severity: ERROR OR severity: CRITICAL")}
+        },
+        "references": INDEX_REF
+    },
+    {
+        "id": "tcc-top-products",
+        "attributes": {
+            "title": "Top Products (Most Purchased)",
+            "visState": json.dumps({
+                "title": "Top Products (Most Purchased)", "type": "histogram",
+                "aggs": [
+                    {"id": "1", "enabled": True, "type": "count", "params": {}, "schema": "metric"},
+                    {"id": "2", "enabled": True, "type": "terms", "params": {"field": "ecommerce.product_name.keyword", "size": 10, "order": "desc", "orderBy": "1"}, "schema": "segment"}
+                ],
+                "params": {"type": "histogram", "addTooltip": True, "addLegend": True}
+            }),
+            "kibanaSavedObjectMeta": {"searchSourceJSON": search_source("ecommerce.action: checkout")}
+        },
+        "references": INDEX_REF
+    },
+    {
+        "id": "tcc-top-buyers",
+        "attributes": {
+            "title": "Top Buyers (Most Orders)",
+            "visState": json.dumps({
+                "title": "Top Buyers (Most Orders)", "type": "pie",
+                "aggs": [
+                    {"id": "1", "enabled": True, "type": "count", "params": {}, "schema": "metric"},
+                    {"id": "2", "enabled": True, "type": "terms", "params": {"field": "ecommerce.customer.keyword", "size": 10, "order": "desc", "orderBy": "1"}, "schema": "segment"}
+                ],
+                "params": {"type": "pie", "addTooltip": True, "addLegend": True, "isDonut": True}
+            }),
+            "kibanaSavedObjectMeta": {"searchSourceJSON": search_source("ecommerce.action: checkout")}
+        },
+        "references": INDEX_REF
     }
 ]
 
-# Create visualizations
+# Create visualizations (Kibana 8.x: attributes + references at top level)
 for v in visuals:
-    data = json.dumps({"attributes": v["attributes"]}).encode()
+    data = json.dumps({"attributes": v["attributes"], "references": v["references"]}).encode()
     req = urllib.request.Request(
         f'{KIBANA}/api/saved_objects/visualization/{v["id"]}',
         data=data,
@@ -650,7 +706,7 @@ for v in visuals:
     except Exception as e:
         print(f"  Warning: {v['id']}: {e}")
 
-# Create dashboard
+# Create dashboard with panel references (Kibana 8.x)
 panels = []
 for i, v in enumerate(visuals):
     col = (i % 2) * 24
@@ -670,8 +726,8 @@ references = [
 
 dash_data = json.dumps({
     "attributes": {
-        "title": "TCC Infrastructure Logs Dashboard",
-        "description": "Overview of infrastructure logs from Zabbix, Elasticsearch, and E-Commerce systems",
+        "title": "TCC Infrastructure & E-Commerce Dashboard",
+        "description": "Infrastructure logs + E-Commerce analytics: top products, top buyers, severity, CPU metrics",
         "panelsJSON": json.dumps(panels),
         "optionsJSON": json.dumps({"useMargins": True, "hidePanelTitles": False}),
         "timeRestore": True,
@@ -704,7 +760,7 @@ PYEOF
 
     echo -e "  ${GREEN}✅ Dashboard created${NC}"
   else
-    echo -e "  ${GREEN}✅ Dashboard 'TCC Infrastructure Logs' already exists${NC}"
+    echo -e "  ${GREEN}✅ Dashboard 'TCC Infrastructure & E-Commerce' already exists${NC}"
   fi
 
   echo ""
@@ -717,4 +773,6 @@ PYEOF
   echo "    • Log Volume Over Time (line)"
   echo "    • Avg CPU % by Host (bar chart)"
   echo "    • Errors & Critical Logs (histogram)"
+  echo "    • Top Products - Most Purchased (bar chart)"
+  echo "    • Top Buyers - Most Orders (donut)"
 fi
