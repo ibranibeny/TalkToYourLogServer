@@ -41,6 +41,7 @@ export AI_SEARCH_INDEX="logs-index"
 
 # Azure AI Foundry (OpenAI)
 export AI_FOUNDRY_NAME="ai-tcc-poc"
+export AI_FOUNDRY_CUSTOM_DOMAIN="ai-tcc-poc-v3"  # Must be globally unique; change if 'CustomDomainInUse'
 export AI_FOUNDRY_SKU="S0"
 export AI_FOUNDRY_LOCATION="eastus"  # GPT-4o GlobalStandard requires eastus (not available in southeastasia)
 export AI_MODEL_DEPLOYMENT="gpt-4o"

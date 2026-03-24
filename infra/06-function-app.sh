@@ -13,49 +13,80 @@ echo "=========================================="
 echo "Creating Storage Account for Function App"
 echo "=========================================="
 
-az storage account create \
-  --resource-group "$RESOURCE_GROUP" \
-  --name "$STORAGE_ACCOUNT" \
-  --location "$LOCATION" \
-  --sku Standard_LRS \
-  --kind StorageV2 \
-  --https-only true \
-  --min-tls-version TLS1_2 \
-  --tags $TAGS
-
-echo "✅ Storage account created: $STORAGE_ACCOUNT"
+if az storage account show --resource-group "$RESOURCE_GROUP" --name "$STORAGE_ACCOUNT" --query name -o tsv 2>/dev/null; then
+  echo "⏭️  Storage account '$STORAGE_ACCOUNT' already exists, skipping"
+else
+  az storage account create \
+    --resource-group "$RESOURCE_GROUP" \
+    --name "$STORAGE_ACCOUNT" \
+    --location "$LOCATION" \
+    --sku Standard_LRS \
+    --kind StorageV2 \
+    --https-only true \
+    --min-tls-version TLS1_2 \
+    --tags $TAGS
+  echo "✅ Storage account created: $STORAGE_ACCOUNT"
+fi
 
 echo "=========================================="
 echo "Creating App Service Plan: $FUNCTION_APP_PLAN"
 echo "=========================================="
 
-# Use App Service Plan (B1) instead of consumption plan
-# Consumption plan requires shared-key file share creation which is blocked by subscription policy
-az appservice plan create \
-  --resource-group "$RESOURCE_GROUP" \
-  --name "$FUNCTION_APP_PLAN" \
-  --location "$LOCATION" \
-  --sku B1 \
-  --is-linux
-
-echo "✅ App Service Plan created"
+if az appservice plan show --resource-group "$RESOURCE_GROUP" --name "$FUNCTION_APP_PLAN" --query name -o tsv 2>/dev/null; then
+  echo "⏭️  App Service Plan '$FUNCTION_APP_PLAN' already exists, skipping"
+else
+  # Use App Service Plan (B1) instead of consumption plan
+  # Consumption plan requires shared-key file share creation which is blocked by subscription policy
+  az appservice plan create \
+    --resource-group "$RESOURCE_GROUP" \
+    --name "$FUNCTION_APP_PLAN" \
+    --location "$LOCATION" \
+    --sku B1 \
+    --is-linux
+  echo "✅ App Service Plan created"
+fi
 
 echo "=========================================="
 echo "Creating Function App: $FUNCTION_APP_NAME"
 echo "=========================================="
 
-az functionapp create \
+if az functionapp show --resource-group "$RESOURCE_GROUP" --name "$FUNCTION_APP_NAME" --query name -o tsv 2>/dev/null; then
+  echo "⏭️  Function App '$FUNCTION_APP_NAME' already exists, skipping creation"
+else
+  az functionapp create \
+    --resource-group "$RESOURCE_GROUP" \
+    --name "$FUNCTION_APP_NAME" \
+    --storage-account "$STORAGE_ACCOUNT" \
+    --plan "$FUNCTION_APP_PLAN" \
+    --runtime "$FUNCTION_RUNTIME" \
+    --runtime-version "3.10" \
+    --functions-version "$FUNCTION_VERSION" \
+    --os-type Linux \
+    --tags $TAGS
+  echo "✅ Function App created"
+fi
+
+# Enable system-assigned managed identity
+echo "  Enabling managed identity on Function App..."
+FUNC_PRINCIPAL_ID=$(az functionapp identity assign \
   --resource-group "$RESOURCE_GROUP" \
   --name "$FUNCTION_APP_NAME" \
-  --storage-account "$STORAGE_ACCOUNT" \
-  --plan "$FUNCTION_APP_PLAN" \
-  --runtime "$FUNCTION_RUNTIME" \
-  --runtime-version "3.10" \
-  --functions-version "$FUNCTION_VERSION" \
-  --os-type Linux \
-  --tags $TAGS
+  --query principalId -o tsv)
+echo "  Function App principal: $FUNC_PRINCIPAL_ID"
 
-echo "✅ Function App created"
+# Assign Cognitive Services OpenAI User role so Function App can call OpenAI via DefaultAzureCredential
+AI_FOUNDRY_ID=$(az cognitiveservices account show \
+  --resource-group "$RESOURCE_GROUP" \
+  --name "$AI_FOUNDRY_NAME" \
+  --query id -o tsv)
+
+az role assignment create \
+  --assignee "$FUNC_PRINCIPAL_ID" \
+  --role "Cognitive Services OpenAI User" \
+  --scope "$AI_FOUNDRY_ID" \
+  2>/dev/null || echo "  (role assignment may already exist)"
+
+echo "✅ Managed identity + OpenAI role assigned"
 
 # Configure app settings
 SEARCH_ADMIN_KEY=$(az search admin-key show \
@@ -65,16 +96,11 @@ SEARCH_ADMIN_KEY=$(az search admin-key show \
 
 ES_IP=$(az vm show --resource-group "$RESOURCE_GROUP" --name "$VM_ELASTICSEARCH" -d --query publicIps -o tsv)
 
-# Get Azure OpenAI endpoint and key
+# Get Azure OpenAI endpoint (key left empty — Function App uses DefaultAzureCredential)
 AI_ENDPOINT=$(az cognitiveservices account show \
   --resource-group "$RESOURCE_GROUP" \
   --name "$AI_FOUNDRY_NAME" \
   --query "properties.endpoint" -o tsv)
-
-AI_KEY=$(az cognitiveservices account keys list \
-  --resource-group "$RESOURCE_GROUP" \
-  --name "$AI_FOUNDRY_NAME" \
-  --query "key1" -o tsv)
 
 az functionapp config appsettings set \
   --resource-group "$RESOURCE_GROUP" \
@@ -86,7 +112,7 @@ az functionapp config appsettings set \
     "AI_SEARCH_KEY=$SEARCH_ADMIN_KEY" \
     "AI_SEARCH_INDEX=$AI_SEARCH_INDEX" \
     "AZURE_OPENAI_ENDPOINT=$AI_ENDPOINT" \
-    "AZURE_OPENAI_KEY=$AI_KEY" \
+    "AZURE_OPENAI_KEY=" \
     "AZURE_OPENAI_EMBEDDING_DEPLOYMENT=text-embedding-ada-002" \
     "BATCH_SIZE=100" \
     "SYNC_LOOKBACK_MINUTES=10"

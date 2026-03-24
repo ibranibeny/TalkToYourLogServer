@@ -72,6 +72,33 @@ create_vm_if_not_exists "$VM_STREAMLIT" /tmp/cloud-init-streamlit.yaml
 
 echo "✅ Streamlit VM created"
 
+# ─── Enable managed identity ─────────────────────────────────────────────────
+echo "  Enabling managed identity on Streamlit VM..."
+VM_PRINCIPAL_ID=$(az vm identity assign \
+  --resource-group "$RESOURCE_GROUP" \
+  --name "$VM_STREAMLIT" \
+  --query systemAssignedIdentity -o tsv 2>/dev/null || \
+  az vm show --resource-group "$RESOURCE_GROUP" --name "$VM_STREAMLIT" \
+    --query identity.principalId -o tsv)
+echo "  Streamlit VM principal: $VM_PRINCIPAL_ID"
+
+# Assign Cognitive Services OpenAI User role
+AI_FOUNDRY_ID=$(az cognitiveservices account show \
+  --resource-group "$RESOURCE_GROUP" \
+  --name "$AI_FOUNDRY_NAME" \
+  --query id -o tsv 2>/dev/null || echo "")
+
+if [[ -n "$AI_FOUNDRY_ID" ]]; then
+  az role assignment create \
+    --assignee "$VM_PRINCIPAL_ID" \
+    --role "Cognitive Services OpenAI User" \
+    --scope "$AI_FOUNDRY_ID" \
+    2>/dev/null || echo "  (role assignment may already exist)"
+  echo "✅ Managed identity + OpenAI role assigned to Streamlit VM"
+else
+  echo "⚠️  AI Foundry not found, skipping role assignment"
+fi
+
 # ─── Wait for cloud-init ─────────────────────────────────────────────────────
 wait_for_vm_agent "$VM_STREAMLIT"
 echo "Waiting 30s for cloud-init package installs..."
@@ -84,9 +111,8 @@ AI_ENDPOINT=$(az cognitiveservices account show \
   -g "$RESOURCE_GROUP" -n "$AI_FOUNDRY_NAME" \
   --query "properties.endpoint" -o tsv 2>/dev/null || echo "")
 
-AI_KEY=$(az cognitiveservices account keys list \
-  -g "$RESOURCE_GROUP" -n "$AI_FOUNDRY_NAME" \
-  --query "key1" -o tsv 2>/dev/null || echo "")
+# Key left empty — backend uses DefaultAzureCredential via managed identity
+AI_KEY=""
 
 SEARCH_ADMIN_KEY=$(az search admin-key show \
   -g "$RESOURCE_GROUP" --service-name "$AI_SEARCH_NAME" \
@@ -135,7 +161,7 @@ cp -r /tmp/frontend/* /opt/tcc/frontend/
 python3 -m venv /opt/tcc/venv
 /opt/tcc/venv/bin/pip install -q --upgrade pip
 /opt/tcc/venv/bin/pip install -q \
-  mcp openai azure-search-documents \
+  mcp openai azure-search-documents azure-identity \
   "elasticsearch>=8.12.0,<9.0.0" \
   python-dotenv httpx streamlit
 
