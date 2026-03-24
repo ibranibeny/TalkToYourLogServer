@@ -1,0 +1,15 @@
+[Unit]
+Description=TCC E-Commerce Flask App (Gunicorn)
+After=network.target elasticsearch.service
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/ecommerce
+Environment="LOGSTASH_URL=http://ES_VM_IP:5044"
+ExecStart=/opt/ecommerce/venv/bin/gunicorn --workers 3 --bind 127.0.0.1:5000 app:app
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,86 @@
+[
+  {
+    "timestamp": "2026-03-19T10:15:00Z",
+    "hostname": "ecommerce-web-01",
+    "severity": "ERROR",
+    "service": "nginx",
+    "message": "Service nginx restart required on ecommerce-web-01",
+    "source": "zabbix",
+    "category": "infrastructure",
+    "metrics": { "cpu_percent": 85.0, "memory_percent": 72.0, "disk_percent": 45.0, "network_in_bytes": 5432100, "network_out_bytes": 2345678 }
+  },
+  {
+    "timestamp": "2026-03-19T10:20:00Z",
+    "hostname": "db-server-01",
+    "severity": "WARNING",
+    "service": "mysql",
+    "message": "Slow query detected in mysql on db-server-01: 2.3s",
+    "source": "zabbix",
+    "category": "infrastructure",
+    "metrics": { "cpu_percent": 65.0, "memory_percent": 88.0, "disk_percent": 60.0, "network_in_bytes": 1234567, "network_out_bytes": 987654 }
+  },
+  {
+    "timestamp": "2026-03-19T10:25:00Z",
+    "hostname": "app-server-01",
+    "severity": "CRITICAL",
+    "service": "docker",
+    "message": "Service docker DOWN on app-server-01 - immediate action required",
+    "source": "zabbix",
+    "category": "infrastructure",
+    "metrics": { "cpu_percent": 95.0, "memory_percent": 91.0, "disk_percent": 78.0, "network_in_bytes": 100, "network_out_bytes": 50 }
+  },
+  {
+    "timestamp": "2026-03-19T10:30:00Z",
+    "hostname": "ecommerce-web-01",
+    "severity": "INFO",
+    "service": "nginx",
+    "message": "POST /add-to-cart - Added 'Wireless Mouse' ($25.99) to cart by Ahmad",
+    "source": "ecommerce-app",
+    "category": "ecommerce",
+    "ecommerce": { "action": "add_to_cart", "status": "success", "product_id": "PROD-001", "product_name": "Wireless Mouse", "price": 25.99, "customer": "Ahmad" },
+    "metrics": { "cpu_percent": 35.0, "memory_percent": 50.0, "disk_percent": 30.0, "network_in_bytes": 45000, "network_out_bytes": 12000 }
+  },
+  {
+    "timestamp": "2026-03-19T10:32:00Z",
+    "hostname": "ecommerce-web-01",
+    "severity": "INFO",
+    "service": "nginx",
+    "message": "POST /checkout - Order ORD-847291 by Ahmad: 2 items, total $51.98 - PAYMENT SUCCESS",
+    "source": "ecommerce-app",
+    "category": "ecommerce",
+    "ecommerce": { "action": "checkout", "status": "success", "order_id": "ORD-847291", "customer": "Ahmad", "total": 51.98, "item_count": 2, "payment_status": "success" },
+    "metrics": { "cpu_percent": 42.0, "memory_percent": 55.0, "disk_percent": 30.0, "network_in_bytes": 89000, "network_out_bytes": 23000 }
+  },
+  {
+    "timestamp": "2026-03-19T10:35:00Z",
+    "hostname": "ecommerce-web-01",
+    "severity": "ERROR",
+    "service": "nginx",
+    "message": "POST /checkout - Payment FAILED for ORD-563812 by Siti: $89.99 - Gateway timeout",
+    "source": "ecommerce-app",
+    "category": "ecommerce",
+    "ecommerce": { "action": "checkout", "status": "payment_failed", "order_id": "ORD-563812", "customer": "Siti", "total": 89.99, "error": "gateway_timeout" },
+    "metrics": { "cpu_percent": 68.0, "memory_percent": 72.0, "disk_percent": 31.0, "network_in_bytes": 67000, "network_out_bytes": 5000 }
+  },
+  {
+    "timestamp": "2026-03-19T10:40:00Z",
+    "hostname": "ecommerce-web-01",
+    "severity": "INFO",
+    "service": "nginx",
+    "message": "GET / - Homepage viewed by Dewi",
+    "source": "ecommerce-app",
+    "category": "ecommerce",
+    "ecommerce": { "action": "page_view", "page": "homepage", "customer": "Dewi" },
+    "metrics": { "cpu_percent": 22.0, "memory_percent": 45.0, "disk_percent": 30.0, "network_in_bytes": 34000, "network_out_bytes": 156000 }
+  },
+  {
+    "timestamp": "2026-03-19T10:45:00Z",
+    "hostname": "monitor-01",
+    "severity": "INFO",
+    "service": "zabbix-agent",
+    "message": "Health check passed for zabbix-agent on monitor-01",
+    "source": "zabbix",
+    "category": "infrastructure",
+    "metrics": { "cpu_percent": 15.0, "memory_percent": 35.0, "disk_percent": 22.0, "network_in_bytes": 567890, "network_out_bytes": 123456 }
+  }
+]
