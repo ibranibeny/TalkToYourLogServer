@@ -71,20 +71,36 @@
 | 5.7 | Update ARCHITECTURE.md | ✅ Done | DefaultAzureCredential, Streamlit VM, bulk sync |
 | 5.8 | Update TASKS.md | ✅ Done | This file |
 
-## Phase 6: Demo Preparation
+## Phase 6: Operations & Health Check
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 6.1 | Prepare demo script / talking points | ⬜ TODO | |
-| 6.2 | Demo: E-Commerce purchase flow end-to-end | ⬜ TODO | Browse → Buy → Log → AI Query |
-| 6.3 | Demo: Payment failure investigation via chat | ⬜ TODO | "Why are payments failing?" |
-| 6.4 | Capture screenshots for documentation | ⬜ TODO | |
+| 6.1 | Create `infra/check-health.sh` script | ✅ Done | 7 sections: NSG, VMs, services, endpoints, Zabbix, Kibana |
+| 6.2 | NSG auto-fix (AllowAllInbound/Outbound) | ✅ Done | Azure policy strips rules; script re-creates them |
+| 6.3 | VM power state check + auto-start | ✅ Done | Starts stopped VMs automatically |
+| 6.4 | Service health checks + auto-restart | ✅ Done | Checks systemd services on all 4 VMs |
+| 6.5 | Endpoint verification with NSG retry | ✅ Done | Tests all HTTP endpoints, retries after NSG fix |
+| 6.6 | Zabbix credentials check via API | ✅ Done | Verifies Admin/zabbix login, lists monitored hosts |
+| 6.7 | Zabbix host auto-registration | ✅ Done | Registers vm-ecommerce + vm-elasticsearch if missing |
+| 6.8 | Install zabbix-agent on vm-elasticsearch | ✅ Done | Was missing; now installed + configured |
+| 6.9 | Kibana dashboard auto-setup (8 visualizations) | ✅ Done | Kibana 8.x format with references array |
+| 6.10 | Fix ES mapping (product_name.keyword) | ✅ Done | Reindexed 827 docs with keyword sub-field |
+| 6.11 | Load sample ecommerce data (750 docs) | ✅ Done | 50 checkouts with product_name + customer |
+| 6.12 | Update 03-onprem-vms.sh (zabbix-agent on ES, mapping fix) | ✅ Done | Future deployments include these fixes |
 
-## Phase 7: Cleanup
+## Phase 7: Demo Preparation
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 7.1 | Delete Azure resource group | ⬜ TODO | `az group delete --name rg-tcc-poc` |
-| 7.2 | Remove local SSH keys if generated | ⬜ TODO | |
-| 7.3 | Document lessons learned | ⬜ TODO | |
+| 7.1 | Prepare demo script / talking points | ⬜ TODO | |
+| 7.2 | Demo: E-Commerce purchase flow end-to-end | ⬜ TODO | Browse → Buy → Log → AI Query |
+| 7.3 | Demo: Payment failure investigation via chat | ⬜ TODO | "Why are payments failing?" |
+| 7.4 | Capture screenshots for documentation | ⬜ TODO | |
+
+## Phase 8: Cleanup
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 8.1 | Delete Azure resource group | ⬜ TODO | `az group delete --name rg-tcc-poc` |
+| 8.2 | Remove local SSH keys if generated | ⬜ TODO | |
+| 8.3 | Document lessons learned | ⬜ TODO | |
 
 ---
 
@@ -106,10 +122,12 @@
 | MCP 406 Not Acceptable | Missing `Accept` header on httpx requests | Added `Accept: application/json, text/event-stream` to all requests |
 | Semantic search failures | No semantic config on AI Search index | Added `my-semantic-config` via PUT API |
 | Function App restart loop | Container Oryx build succeeds but app won't start | Bypassed with bulk sync on Streamlit VM |
-| NSG rules disappearing | Unknown Azure behavior after certain operations | Re-added `AllowAllInbound` rule (priority 200) |
+| NSG rules disappearing | Azure policy strips AllowAllInbound rule | `check-health.sh` auto-recreates on every run |
 | ES client version mismatch | elasticsearch-py v9 incompatible | Pinned to `>=8.12.0,<9.0.0` |
 
 ### Known Issues
 1. **Function App**: `func-tcc-poc-ingestion` container restart loop (low priority)
-2. **NSG**: `AllowAllInbound` rule may need re-adding after Azure management operations
+2. **NSG**: Azure policy strips `AllowAllInbound` — run `check-health.sh` to auto-fix
 3. **Cost**: 4 VMs running continuously (~$350-380/month) — stop VMs when not demoing
+4. **Zabbix hosts**: Registration may fail during initial deploy — `check-health.sh` auto-registers them
+5. **ES mapping**: `ecommerce.product_name` must be `text` + `.keyword` for Kibana aggregations

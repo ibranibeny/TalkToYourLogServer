@@ -106,9 +106,9 @@ This Proof of Concept demonstrates a hybrid cloud architecture where:
 - View alerts, event history, and trigger status
 
 ### 2. Kibana (Elasticsearch UI) → `http://<es-vm-ip>:5601`
-- Explore all logs in the `infrastructure-logs` index (1618+ docs)
+- Explore all logs in the `infrastructure-logs` index (800+ docs)
 - Use **Discover** to browse raw log entries (infra + ecommerce)
-- Pre-built dashboard with 11 visualizations
+- Pre-built dashboard with 8 visualizations (auto-created by `check-health.sh`)
 
 ### 3. E-Commerce Shop → `http://<ecommerce-vm-ip>/`
 - Browse product catalog (8 products: electronics, accessories, furniture)
@@ -156,20 +156,24 @@ cd infra
 chmod +x deploy.sh
 ./deploy.sh
 
-# 2. Wait ~5 min for cloud-init, then access:
+# 2. Run health check (fixes NSGs, starts VMs, sets up Kibana dashboard)
+cd infra
+bash check-health.sh
+
+# 3. Access services:
 #    - Zabbix:      http://<zabbix-ip>/zabbix      (Admin / zabbix)
 #    - Kibana:      http://<es-ip>:5601             (explore logs)
 #    - E-Commerce:  http://<ecommerce-ip>/          (browse & buy)
 #    - Streamlit:   http://<streamlit-ip>:8501      (AI chatbot)
 #    - MCP Server:  http://<streamlit-ip>:8080      (backend API)
 
-# 3. (Optional) Run bulk sync to push all ES data to AI Search
+# 4. (Optional) Run bulk sync to push all ES data to AI Search
 ssh tccadmin@<streamlit-ip>
 cd /opt/tcc
 source venv/bin/activate
 python ingestion/bulk_sync.py
 
-# 4. (Optional) Run local development
+# 5. (Optional) Run local development
 pip install -r backend/requirements.txt
 pip install -r frontend/requirements.txt
 # Ensure az login and managed identity / RBAC is configured
@@ -207,7 +211,8 @@ PoC/
 │   ├── 04-ai-search.sh          # Azure AI Search + index + semantic config
 │   ├── 05-ai-foundry.sh         # AI Foundry (GPT-4o + Embeddings)
 │   ├── 06-function-app.sh       # Ingestion Function App (has restart issue)
-│   └── 07-streamlit-vm.sh       # Streamlit + MCP Server VM
+│   ├── 07-streamlit-vm.sh       # Streamlit + MCP Server VM
+│   └── check-health.sh          # Health check, recovery & dashboard setup
 ├── ecommerce-app/               # E-Commerce web application
 │   ├── app.py                   # Flask app (products, cart, checkout)
 │   ├── requirements.txt         # Flask dependencies
@@ -245,10 +250,33 @@ PoC/
 | Azure OpenAI (GPT-4o + Embeddings) | ~$20-40 |
 | Function App + Storage | ~$1-5 |
 
+## Health Check & Recovery (`infra/check-health.sh`)
+
+A single script that diagnoses and auto-fixes the entire environment:
+
+```bash
+bash infra/check-health.sh
+```
+
+| Section | What it does |
+|---------|-------------|
+| 1. NSG Rules | Checks & re-creates `AllowAllInbound` on both NSGs (Azure policy strips them) |
+| 2. VM Power State | Detects stopped VMs and sends start commands |
+| 3. VM Inventory | Lists all VMs with public/private IPs and power state |
+| 4. Service Health | SSH into each VM, checks systemd services, auto-restarts failed ones |
+| 5. Endpoint Verification | Tests HTTP endpoints (ES, Kibana, Zabbix, E-Commerce, Streamlit, MCP) with auto-retry after NSG fix |
+| 6. Zabbix Credentials | Verifies Admin login via API, lists monitored hosts, auto-registers missing hosts (vm-ecommerce, vm-elasticsearch) |
+| 7. Kibana Dashboard | Creates/recreates 8 visualizations + dashboard using Kibana 8.x Saved Objects API |
+
+**Kibana Dashboard Visualizations:**
+- Log Severity Distribution (donut), Logs by Host (bar), Logs by Service (pie)
+- Logs Timeline (line), CPU Metrics (bar), Error Logs (histogram)
+- Top Products - Most Purchased (bar), Top Buyers - Most Orders (donut)
+
 ## Known Issues
 
 1. **Function App container restart loop**: `func-tcc-poc-ingestion` deploys successfully but enters a start/stop loop. Bypassed by running bulk sync directly on the Streamlit VM.
-2. **NSG rules**: The `AllowAllInbound` rule on `nsg-onprem` has been observed disappearing. May need to re-add after certain Azure operations.
+2. **NSG rules**: Azure policy strips `AllowAllInbound` periodically. Run `check-health.sh` to auto-fix.
 
 ## Cleanup
 

@@ -265,7 +265,51 @@ For production, consider:
 - Failed payments generate ERROR severity logs with "gateway_timeout"
 - Useful for demonstrating AI root cause analysis
 
-## 7. Security Considerations
+## 7. Operations: Health Check & Recovery (`infra/check-health.sh`)
+
+A comprehensive single-command script for environment lifecycle management:
+
+```bash
+bash infra/check-health.sh
+```
+
+### 7.1 Script Sections
+
+| # | Section | Auto-Fix |
+|---|---------|----------|
+| 1 | **NSG Rules** — Checks `AllowAllInbound`/`AllowAllOutbound` on `nsg-onprem` and `nsg-azure` | Re-creates missing rules (Azure policy strips them) |
+| 2 | **VM Power State** — Checks all 4 VMs | Sends start command for stopped VMs |
+| 3 | **VM Inventory** — Lists public/private IPs and power state | Display only |
+| 4 | **Service Health** — Checks systemd services on each VM via `az vm run-command` | Auto-restarts failed services |
+| 5 | **Endpoint Verification** — Tests HTTP endpoints (ES, Kibana, Zabbix, E-Commerce, Streamlit, MCP) | Retries after NSG auto-fix |
+| 6 | **Zabbix Credentials** — Verifies Admin/zabbix login via API, lists monitored hosts | Auto-registers missing hosts (vm-ecommerce, vm-elasticsearch) |
+| 7 | **Kibana Dashboard** — Creates 8 visualizations + dashboard via Kibana 8.x Saved Objects API | Deletes stale objects and recreates |
+
+### 7.2 Services Per VM
+
+| VM | Services Checked |
+|----|-----------------|
+| vm-elasticsearch | elasticsearch, kibana, logstash |
+| vm-zabbix | mysql, zabbix-server, zabbix-agent, apache2 |
+| vm-ecommerce | ecommerce, nginx, zabbix-agent |
+| vm-streamlit | mcp-server, streamlit |
+
+### 7.3 Kibana Dashboard
+
+The script creates the **"TCC Infrastructure & E-Commerce Dashboard"** with 8 visualizations using the Kibana 8.x Saved Objects API (requires `references` array format with `indexRefName`):
+
+| Visualization | Type | Description |
+|---------------|------|-------------|
+| Log Severity Distribution | Donut | Breakdown by severity (INFO/WARNING/ERROR/CRITICAL) |
+| Logs by Host | Bar | Log count per hostname |
+| Logs by Service | Pie | Distribution across services |
+| Logs Timeline | Line | Logs over time (date histogram) |
+| CPU Metrics | Bar | Average CPU per host |
+| Error Logs | Histogram | ERROR/CRITICAL logs over time |
+| Top Products (Most Purchased) | Bar | Top products by checkout count (`ecommerce.product_name.keyword`) |
+| Top Buyers (Most Orders) | Donut | Top customers by order count (`ecommerce.customer`) |
+
+## 8. Security Considerations
 
 - **Authentication**: `DefaultAzureCredential` for all Azure OpenAI calls (subscription enforces `disableLocalAuth=true`)
 - **Managed Identity**: Streamlit VM has system-assigned managed identity with `Cognitive Services OpenAI User` role
@@ -275,7 +319,7 @@ For production, consider:
 - AI Search admin keys stored in environment variables (use Key Vault in production)
 - Azure OpenAI API keys are **not used** — cleared from `.env` files
 
-## 8. Azure Resources Summary
+## 9. Azure Resources Summary
 
 | Resource | SKU | Estimated Cost/Month |
 |----------|-----|---------------------|
@@ -293,7 +337,7 @@ For production, consider:
 | Storage Account | Standard LRS | ~$1 |
 | **Total Estimated** | | **~$350-380/month** |
 
-## 9. Cleanup
+## 10. Cleanup
 
 ```bash
 # Delete all PoC resources
