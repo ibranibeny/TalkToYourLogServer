@@ -217,7 +217,7 @@ curl -s -X PUT "http://localhost:9200/infrastructure-logs" -H 'Content-Type: app
           "order_id": { "type": "keyword" },
           "customer": { "type": "keyword" },
           "product_id": { "type": "keyword" },
-          "product_name": { "type": "text" },
+          "product_name": { "type": "text", "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } } },
           "price": { "type": "float" },
           "total": { "type": "float" },
           "item_count": { "type": "integer" },

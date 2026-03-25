@@ -736,7 +736,7 @@ visuals = [
                 "title": "Top Buyers (Most Orders)", "type": "pie",
                 "aggs": [
                     {"id": "1", "enabled": True, "type": "count", "params": {}, "schema": "metric"},
-                    {"id": "2", "enabled": True, "type": "terms", "params": {"field": "ecommerce.customer.keyword", "size": 10, "order": "desc", "orderBy": "1"}, "schema": "segment"}
+                    {"id": "2", "enabled": True, "type": "terms", "params": {"field": "ecommerce.customer", "size": 10, "order": "desc", "orderBy": "1"}, "schema": "segment"}
                 ],
                 "params": {"type": "pie", "addTooltip": True, "addLegend": True, "isDonut": True}
             }),
