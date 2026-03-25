@@ -6,6 +6,7 @@
 # 2. Lists all VMs with IPs and power state
 # 3. Ensures NSG AllowAllInbound rule exists
 # 4. Verifies services on each VM and restarts if needed
+# 5. Zabbix: verifies credentials + auto-registers missing hosts
 # =============================================================================
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -432,6 +433,64 @@ else:
   printf "     %-25s %-18s %s\n" "Name" "IP" "Status"
   printf "     %-25s %-18s %s\n" "─────────────────────────" "──────────────────" "────────"
   echo "$HOSTS_INFO"
+
+  # Auto-register missing hosts
+  echo ""
+  echo "     Checking host registration..."
+  ES_PRIV=$(az vm show -g "$RESOURCE_GROUP" -n "$VM_ELASTICSEARCH" -d --query privateIps -o tsv 2>/dev/null || echo "10.0.1.4")
+  ECOM_PRIV=$(az vm show -g "$RESOURCE_GROUP" -n "$VM_ECOMMERCE" -d --query privateIps -o tsv 2>/dev/null || echo "10.0.1.6")
+
+  python3 -c "
+import urllib.request, json, sys
+
+ZABBIX_URL = '$ZABBIX_URL'
+auth = '$ZABBIX_AUTH'
+
+def api(method, params):
+    payload = {'jsonrpc': '2.0', 'method': method, 'params': params, 'auth': auth, 'id': 1}
+    data = json.dumps(payload).encode()
+    req = urllib.request.Request(ZABBIX_URL, data=data, headers={'Content-Type': 'application/json-rpc'})
+    return json.loads(urllib.request.urlopen(req, timeout=15).read())
+
+# Get template + group IDs
+tpl = api('template.get', {'filter': {'host': ['Linux by Zabbix agent']}}).get('result', [])
+tpl_id = tpl[0]['templateid'] if tpl else None
+grp = api('hostgroup.get', {'filter': {'name': ['Linux servers']}}).get('result', [])
+grp_id = grp[0]['groupid'] if grp else None
+
+if not grp_id:
+    print('     No Linux servers group found, skipping')
+    sys.exit(0)
+
+hosts_to_register = [
+    {'host': 'vm-ecommerce', 'name': 'E-Commerce App (TCC Shop)', 'ip': '$ECOM_PRIV'},
+    {'host': 'vm-elasticsearch', 'name': 'Elasticsearch + Kibana + Logstash', 'ip': '$ES_PRIV'},
+]
+
+registered = 0
+for h in hosts_to_register:
+    existing = api('host.get', {'filter': {'host': [h['host']]}}).get('result', [])
+    if existing:
+        continue
+    templates = [{'templateid': tpl_id}] if tpl_id else []
+    result = api('host.create', {
+        'host': h['host'], 'name': h['name'],
+        'interfaces': [{'type': 1, 'main': 1, 'useip': 1, 'ip': h['ip'], 'dns': '', 'port': '10050'}],
+        'groups': [{'groupid': grp_id}],
+        'templates': templates,
+        'description': 'TCC PoC - ' + h['name']
+    })
+    if 'error' not in result:
+        print(f'     Registered {h[\"host\"]} ({h[\"ip\"]})')
+        registered += 1
+    else:
+        print(f'     Failed to register {h[\"host\"]}: {result[\"error\"][\"data\"]}')
+
+if registered == 0:
+    print('     All hosts already registered')
+else:
+    print(f'     Registered {registered} new host(s)')
+" 2>/dev/null || echo -e "  ${YELLOW}⚠️  Host auto-registration skipped (API error)${NC}"
 
   # Logout
   python3 -c "

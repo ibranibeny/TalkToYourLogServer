@@ -290,8 +290,28 @@ systemctl enable logstash
 systemctl start logstash
 echo "Logstash installed and running on port 5044"
 
+# ─── Install & Configure Zabbix Agent ─────────────────────────────────────────
+echo "Installing Zabbix agent..."
+cd /tmp
+wget -q https://repo.zabbix.com/zabbix/6.4/ubuntu/pool/main/z/zabbix-release/zabbix-release_6.4-1+ubuntu22.04_all.deb
+dpkg -i zabbix-release_6.4-1+ubuntu22.04_all.deb
+apt-get update -qq
+DEBIAN_FRONTEND=noninteractive apt-get install -y zabbix-agent
+
+sed -i "s/^Server=.*/Server=ZABBIX_IP_PLACEHOLDER/" /etc/zabbix/zabbix_agentd.conf
+sed -i "s/^ServerActive=.*/ServerActive=ZABBIX_IP_PLACEHOLDER/" /etc/zabbix/zabbix_agentd.conf
+sed -i "s/^Hostname=.*/Hostname=vm-elasticsearch/" /etc/zabbix/zabbix_agentd.conf
+
+systemctl restart zabbix-agent
+systemctl enable zabbix-agent
+echo "Zabbix agent installed and pointing to ZABBIX_IP_PLACEHOLDER"
+
 echo "Elasticsearch + Kibana + Logstash setup complete"
 SETUPEOF
+
+# Substitute Zabbix private IP into the setup script
+ZABBIX_PRIV_IP=$(az vm show --resource-group "$RESOURCE_GROUP" --name "$VM_ZABBIX" -d --query privateIps -o tsv 2>/dev/null || echo "10.0.1.5")
+sed -i "s/ZABBIX_IP_PLACEHOLDER/${ZABBIX_PRIV_IP}/g" /tmp/setup-elasticsearch.sh
 
 az vm run-command invoke \
   --resource-group "$RESOURCE_GROUP" \
