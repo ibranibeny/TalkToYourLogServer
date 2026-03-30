@@ -26,23 +26,23 @@ This Proof of Concept demonstrates a hybrid cloud architecture where:
 │           ON-PREMISES SIMULATION (4 VMs in southeastasia)               │
 │                                                                         │
 │  ┌──────────────────┐                                                   │
-│  │  E-Commerce VM   │   Nginx (port 80) → Flask/Gunicorn (port 5000)   │
+│  │  E-Commerce VM   │   Nginx (port 80) → Flask/Gunicorn (port 5000)    │
 │  │ ecommerce-web-01 │──┐ Purchase/cart/page logs                        │
 │  └──────────────────┘  │                                                │
 │                        │                                                │
-│  ┌──────────────────┐  │  ┌─────────────────────────────────────┐      │
-│  │   Zabbix VM      │──┼─>│  Elasticsearch VM                    │      │
-│  │   Dashboard:     │  │  │  ES API:  http://<es-ip>:9200       │      │
-│  │   http://<ip>/   │  │  │  Kibana:  http://<es-ip>:5601      │      │
-│  │   zabbix         │──┘  │  Logstash (:5044, HTTP input)       │      │
-│  │  (Admin/zabbix)  │     └──────────────┬──────────────────────┘      │
+│  ┌──────────────────┐  │  ┌─────────────────────────────────────┐       │
+│  │   Zabbix VM      │──┼─>│  Elasticsearch VM                   │       │
+│  │   Dashboard:     │  │  │  ES API:  http://<es-ip>:9200       │       │
+│  │   http://<ip>/   │  │  │  Kibana:  http://<es-ip>:5601       │       │
+│  │   zabbix         │──┘  │  Logstash (:5044, HTTP input)       │       │
+│  │  (Admin/zabbix)  │     └──────────────┬──────────────────────┘       │
 │  └──────────────────┘                    │                              │
 │                                          │  Bulk sync (Python)          │
 │  ┌────────────────────────────────────┐  │  + vector embeddings         │
 │  │  Streamlit VM                      │  │                              │
-│  │  MCP Server (:8080, 5 tools)      │<─┘                              │
-│  │  Streamlit UI (:8501, chatbot)    │                                  │
-│  │  DefaultAzureCredential (MI)      │                                  │
+│  │  MCP Server (:8080, 5 tools)       │<─┘                              │
+│  │  Streamlit UI (:8501, chatbot)     │                                 │
+│  │  DefaultAzureCredential (MI)       │                                 │
 │  └────────────────────────────────────┘                                 │
 │                                                                         │
 └──────────────────────────────────────────┼──────────────────────────────┘
@@ -51,21 +51,21 @@ This Proof of Concept demonstrates a hybrid cloud architecture where:
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                           AZURE CLOUD                                   │
 │                                                                         │
-│  ┌────────────────────┐     ┌─────────────────────┐                    │
-│  │  Azure AI Search   │<────│  Bulk Sync Service   │                    │
-│  │  (Semantic + Vec)  │     │  (Python on          │                    │
-│  │  logs-index        │     │   Streamlit VM)      │                    │
-│  │  1618 docs         │     └─────────────────────┘                    │
-│  └────────┬───────────┘                                                │
+│  ┌────────────────────┐     ┌─────────────────────┐                     │
+│  │  Azure AI Search   │<────│  Bulk Sync Service  │                     │
+│  │  (Semantic + Vec)  │     │  (Python on         │                     │
+│  │  logs-index        │     │   Streamlit VM)     │                     │
+│  │  1618 docs         │     └─────────────────────┘                     │
+│  └────────┬───────────┘                                                 │
 │           │                                                             │
 │           ▼                                                             │
-│  ┌────────────────────┐     ┌─────────────────────┐                    │
+│  ┌────────────────────┐     ┌─────────────────────┐                     │
 │  │  Azure AI Foundry  │<────│  MCP Server          │                    │
 │  │  (GPT-4o + Embed)  │     │  (5 Tools, port 8080)│                    │
 │  │  DefaultAzureCred  │     │  Streamable HTTP     │                    │
-│  └────────────────────┘     └──────────┬──────────┘                    │
+│  └────────────────────┘     └──────────┬──────────┘                     │
 │                                        │                                │
-│                              ┌─────────▼──────────┐                    │
+│                              ┌─────────▼──────────┐                     │
 │                              │  Streamlit Frontend │                    │
 │                              │  (Chat + E-Commerce │                    │
 │                              │   Quick Actions)    │                    │
