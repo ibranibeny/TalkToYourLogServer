@@ -73,6 +73,20 @@ def transform_doc(hit: dict, openai_client: AzureOpenAI) -> dict:
         f"Category: {source.get('category', '')} | "
         f"Message: {source.get('message', '')}"
     )
+
+    # Add metrics context to embedding if present
+    metrics = source.get("metrics", {})
+    if metrics:
+        metric_parts = []
+        if metrics.get("cpu_percent") is not None:
+            metric_parts.append(f"CPU: {metrics['cpu_percent']:.1f}%")
+        if metrics.get("memory_percent") is not None:
+            metric_parts.append(f"Memory: {metrics['memory_percent']:.1f}%")
+        if metrics.get("disk_percent") is not None:
+            metric_parts.append(f"Disk: {metrics['disk_percent']:.1f}%")
+        if metric_parts:
+            text += f" | Metrics: {', '.join(metric_parts)}"
+
     ecommerce = source.get("ecommerce", {})
     if ecommerce:
         text += (
@@ -83,7 +97,6 @@ def transform_doc(hit: dict, openai_client: AzureOpenAI) -> dict:
         )
 
     embedding = generate_embedding(openai_client, text)
-    metrics = source.get("metrics", {})
 
     return {
         "id": doc_id,
